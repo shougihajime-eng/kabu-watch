@@ -1,0 +1,270 @@
+"use client";
+
+import { useEffect, useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { ChevronLeft, Trash2, Loader2, AlertTriangle, Save } from "lucide-react";
+import type { Group, Quote, WatchlistItem } from "@/lib/types";
+import { changeColor, formatChange, formatPrice } from "@/lib/format";
+import { ChartView } from "./ChartView";
+import { NewsList } from "./NewsList";
+
+type Props = {
+  ticker: string;
+};
+
+export function StockDetail({ ticker }: Props) {
+  const router = useRouter();
+  const [item, setItem] = useState<WatchlistItem | null>(null);
+  const [groups, setGroups] = useState<Group[]>([]);
+  const [quote, setQuote] = useState<Quote | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [notFound, setNotFound] = useState(false);
+  const [memo, setMemo] = useState("");
+  const [low, setLow] = useState<string>("");
+  const [high, setHigh] = useState<string>("");
+  const [groupId, setGroupId] = useState<string>("");
+  const [saving, setSaving] = useState(false);
+  const [savedHint, setSavedHint] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [wlRes, gRes, qRes] = await Promise.all([
+        fetch("/api/watchlist", { cache: "no-store" }),
+        fetch("/api/groups", { cache: "no-store" }),
+        fetch("/api/quotes", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tickers: [ticker] }),
+        }),
+      ]);
+      const wl = await wlRes.json();
+      const gr = await gRes.json();
+      const qData = await qRes.json();
+
+      const found = (wl.items as WatchlistItem[]).find((i) => i.ticker === ticker);
+      if (!found) {
+        setNotFound(true);
+        return;
+      }
+      setItem(found);
+      setMemo(found.memo);
+      setLow(found.alert_low != null ? String(found.alert_low) : "");
+      setHigh(found.alert_high != null ? String(found.alert_high) : "");
+      setGroupId(found.group_id ?? "");
+      setGroups(gr.groups ?? []);
+      setQuote((qData.quotes ?? [])[0] ?? null);
+    } finally {
+      setLoading(false);
+    }
+  }, [ticker]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  async function save() {
+    if (!item) return;
+    setSaving(true);
+    try {
+      const lowNum = low.trim() ? Number(low) : null;
+      const highNum = high.trim() ? Number(high) : null;
+      const res = await fetch(`/api/watchlist/${item.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          memo,
+          group_id: groupId || null,
+          alert_low: Number.isFinite(lowNum) ? lowNum : null,
+          alert_high: Number.isFinite(highNum) ? highNum : null,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setItem(data.item);
+        setSavedHint(true);
+        setTimeout(() => setSavedHint(false), 1800);
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function remove() {
+    if (!item) return;
+    if (!confirm(`${item.name} をウォッチリストから削除しますか？`)) return;
+    const res = await fetch(`/api/watchlist/${item.id}`, { method: "DELETE" });
+    if (res.ok) {
+      router.push("/");
+      router.refresh();
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex-1 flex items-center justify-center text-slate-400">
+        <Loader2 className="w-6 h-6 animate-spin" />
+      </div>
+    );
+  }
+
+  if (notFound || !item) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center text-center px-6">
+        <p className="text-lg font-semibold mb-2">この銘柄は登録されていません</p>
+        <Link
+          href="/"
+          className="px-4 py-2 rounded-full bg-emerald-600 text-white font-semibold mt-2"
+        >
+          ホームに戻る
+        </Link>
+      </div>
+    );
+  }
+
+  const currency = quote?.currency ?? (item.market === "jp" ? "JPY" : "USD");
+  const price = quote?.price;
+  const alertHit =
+    price != null &&
+    ((item.alert_low != null && price <= item.alert_low) ||
+      (item.alert_high != null && price >= item.alert_high));
+
+  return (
+    <div className="flex-1 pb-20">
+      <header className="sticky top-0 z-30 bg-white/90 dark:bg-slate-950/90 backdrop-blur border-b border-slate-200 dark:border-slate-800">
+        <div className="max-w-screen-md mx-auto flex items-center gap-2 px-2 h-14">
+          <Link
+            href="/"
+            aria-label="戻る"
+            className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800"
+          >
+            <ChevronLeft className="w-5 h-5" />
+          </Link>
+          <div className="flex-1 min-w-0">
+            <p className="font-bold truncate">{item.name}</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              {displayTicker(item.ticker)} · {item.market === "jp" ? "日本株" : "米国株"}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={remove}
+            aria-label="削除"
+            className="p-2 rounded-full text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/30"
+          >
+            <Trash2 className="w-5 h-5" />
+          </button>
+        </div>
+      </header>
+
+      <div className="max-w-screen-md mx-auto">
+        <section className="px-4 py-5 bg-white dark:bg-slate-900 sm:rounded-2xl sm:mx-2 sm:my-2 border-y sm:border border-slate-200 dark:border-slate-800">
+          <p className="text-3xl font-bold tabular-nums">
+            {formatPrice(price, currency)}
+          </p>
+          <p className={`text-sm tabular-nums mt-1 ${changeColor(quote?.change)}`}>
+            {formatChange(quote?.change, quote?.changePercent, currency)}
+          </p>
+          {alertHit && (
+            <div className="mt-3 flex items-center gap-2 text-amber-600 bg-amber-50 dark:bg-amber-900/20 dark:text-amber-400 px-3 py-2 rounded-lg text-sm">
+              <AlertTriangle className="w-4 h-4" />
+              アラート条件に達しています
+            </div>
+          )}
+        </section>
+
+        <div className="my-2">
+          <ChartView
+            ticker={item.ticker}
+            currency={currency}
+            alertLow={item.alert_low}
+            alertHigh={item.alert_high}
+          />
+        </div>
+
+        <section className="bg-white dark:bg-slate-900 sm:rounded-2xl sm:mx-2 my-2 border-y sm:border border-slate-200 dark:border-slate-800 p-4 space-y-4">
+          <div>
+            <label className="block text-sm font-semibold mb-1">フォルダ</label>
+            <select
+              value={groupId}
+              onChange={(e) => setGroupId(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm"
+            >
+              <option value="">未分類</option>
+              {groups.map((g) => (
+                <option key={g.id} value={g.id}>
+                  {g.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold mb-1">価格アラート</label>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
+              下限・上限の価格を設定すると、その価格に達したときに⚠️マークで知らせます。空欄ならアラート無しです。
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-xs text-slate-500 mb-1">下限</label>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  value={low}
+                  onChange={(e) => setLow(e.target.value)}
+                  placeholder="例: 2500"
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm tabular-nums"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-500 mb-1">上限</label>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  value={high}
+                  onChange={(e) => setHigh(e.target.value)}
+                  placeholder="例: 3500"
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm tabular-nums"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold mb-1">メモ</label>
+            <textarea
+              value={memo}
+              onChange={(e) => setMemo(e.target.value)}
+              rows={4}
+              placeholder="この銘柄を買う理由・気になっているポイントなど"
+              className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm leading-relaxed"
+            />
+          </div>
+
+          <button
+            type="button"
+            onClick={save}
+            disabled={saving}
+            className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-emerald-600 text-white font-semibold hover:bg-emerald-700 disabled:opacity-50"
+          >
+            {saving ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Save className="w-4 h-4" />
+            )}
+            {savedHint ? "保存しました" : "保存"}
+          </button>
+        </section>
+
+        <div className="my-2">
+          <NewsList ticker={item.ticker} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function displayTicker(t: string): string {
+  return t.endsWith(".T") ? t.slice(0, -2) : t;
+}

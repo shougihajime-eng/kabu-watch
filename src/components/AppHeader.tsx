@@ -1,0 +1,36 @@
+"use client";
+
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { LogOut } from "lucide-react";
+
+export function AppHeader({ title = "かぶウォッチ" }: { title?: string }) {
+  const router = useRouter();
+
+  async function logout() {
+    await fetch("/api/auth/logout", { method: "POST" });
+    router.replace("/login");
+    router.refresh();
+  }
+
+  return (
+    <header className="sticky top-0 z-30 bg-white/90 dark:bg-slate-950/90 backdrop-blur border-b border-slate-200 dark:border-slate-800">
+      <div className="max-w-screen-md mx-auto flex items-center justify-between px-4 h-14">
+        <Link
+          href="/"
+          className="font-bold text-lg tracking-tight text-emerald-700 dark:text-emerald-400"
+        >
+          {title}
+        </Link>
+        <button
+          type="button"
+          onClick={logout}
+          aria-label="ログアウト"
+          className="p-2 rounded-full text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+        >
+          <LogOut className="w-5 h-5" />
+        </button>
+      </div>
+    </header>
+  );
+}
