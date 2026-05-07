@@ -2,6 +2,11 @@
 
 このファイルは Claude Code が自動で読み込みます。**プロジェクトに関する重要事項はここに集約**してください（会話メモではなく）。
 
+> **ローカルフォルダ名と GitHub repo 名のずれについて**
+> ローカルは `C:\Users\shoug\株`、GitHub / Vercel は `kabu-watch` という名前です。
+> はじめさんが見やすいように手元は「株」、ネット上は英語の `kabu-watch` で揃えています。
+> 中身は同じです。
+
 ---
 
 ## 進捗（いまここ）
@@ -75,7 +80,7 @@
 
 ```powershell
 # ローカルで動かす（開発モード）
-cd C:\Users\shoug\kabu-watch
+cd C:\Users\shoug\株
 npm run dev
 # → ブラウザで http://localhost:3000 を開く
 
