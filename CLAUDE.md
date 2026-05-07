@@ -25,8 +25,9 @@
 
 ## 本番 URL
 
-- **本番（Vercel）**: <!-- デプロイ後にここに記入 -->
-- **GitHub repo**: <!-- 作成後にここに記入 -->
+- **本番（Vercel）**: https://kabu-watch.vercel.app
+- **GitHub repo**: https://github.com/shougihajime-eng/kabu-watch
+- **Vercel ダッシュボード**: https://vercel.com/shougihajime-3368s-projects/kabu-watch
 
 ## 合言葉（共有パスワード）
 
