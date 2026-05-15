@@ -3,11 +3,12 @@
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ChevronLeft, Trash2, Loader2, AlertTriangle, Save } from "lucide-react";
+import { ChevronLeft, Trash2, Loader2, AlertTriangle, Save, Star } from "lucide-react";
 import type { Group, Quote, WatchlistItem } from "@/lib/types";
 import { changeColor, formatChange, formatPrice } from "@/lib/format";
 import { ChartView } from "./ChartView";
 import { NewsList } from "./NewsList";
+import { AddPaperButton } from "./AddPaperButton";
 
 type Props = {
   ticker: string;
@@ -16,16 +17,18 @@ type Props = {
 export function StockDetail({ ticker }: Props) {
   const router = useRouter();
   const [item, setItem] = useState<WatchlistItem | null>(null);
+  const [name, setName] = useState<string>(ticker);
   const [groups, setGroups] = useState<Group[]>([]);
   const [quote, setQuote] = useState<Quote | null>(null);
   const [loading, setLoading] = useState(true);
-  const [notFound, setNotFound] = useState(false);
+  const [inWatchlist, setInWatchlist] = useState(false);
   const [memo, setMemo] = useState("");
   const [low, setLow] = useState<string>("");
   const [high, setHigh] = useState<string>("");
   const [groupId, setGroupId] = useState<string>("");
   const [saving, setSaving] = useState(false);
   const [savedHint, setSavedHint] = useState(false);
+  const [adding, setAdding] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -42,26 +45,32 @@ export function StockDetail({ ticker }: Props) {
       const wl = await wlRes.json();
       const gr = await gRes.json();
       const qData = await qRes.json();
+      const q: Quote | null = (qData.quotes ?? [])[0] ?? null;
+      setQuote(q);
 
-      const found = (wl.items as WatchlistItem[]).find((i) => i.ticker === ticker);
-      if (!found) {
-        setNotFound(true);
-        return;
-      }
-      setItem(found);
-      setMemo(found.memo);
-      setLow(found.alert_low != null ? String(found.alert_low) : "");
-      setHigh(found.alert_high != null ? String(found.alert_high) : "");
-      setGroupId(found.group_id ?? "");
+      const found = (wl.items as WatchlistItem[]).find((i) => i.ticker === ticker) ?? null;
       setGroups(gr.groups ?? []);
-      setQuote((qData.quotes ?? [])[0] ?? null);
+      if (found) {
+        setItem(found);
+        setInWatchlist(true);
+        setName(found.name);
+        setMemo(found.memo);
+        setLow(found.alert_low != null ? String(found.alert_low) : "");
+        setHigh(found.alert_high != null ? String(found.alert_high) : "");
+        setGroupId(found.group_id ?? "");
+      } else {
+        setItem(null);
+        setInWatchlist(false);
+        if (q?.name) setName(q.name);
+      }
     } finally {
       setLoading(false);
     }
   }, [ticker]);
 
   useEffect(() => {
-    load();
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void load();
   }, [load]);
 
   async function save() {
@@ -91,62 +100,65 @@ export function StockDetail({ ticker }: Props) {
     }
   }
 
+  async function addToWatchlist() {
+    setAdding(true);
+    try {
+      const res = await fetch("/api/watchlist", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ticker, name }),
+      });
+      if (res.ok) await load();
+    } finally {
+      setAdding(false);
+    }
+  }
+
   async function remove() {
     if (!item) return;
     if (!confirm(`${item.name} をウォッチリストから削除しますか？`)) return;
     const res = await fetch(`/api/watchlist/${item.id}`, { method: "DELETE" });
     if (res.ok) {
-      router.push("/");
+      router.push("/watchlist");
       router.refresh();
     }
   }
 
   if (loading) {
     return (
-      <div className="flex-1 flex items-center justify-center text-slate-400">
+      <div className="flex items-center justify-center py-24 text-slate-400">
         <Loader2 className="w-6 h-6 animate-spin" />
       </div>
     );
   }
 
-  if (notFound || !item) {
-    return (
-      <div className="flex-1 flex flex-col items-center justify-center text-center px-6">
-        <p className="text-lg font-semibold mb-2">この銘柄は登録されていません</p>
-        <Link
-          href="/"
-          className="px-4 py-2 rounded-full bg-emerald-600 text-white font-semibold mt-2"
-        >
-          ホームに戻る
-        </Link>
-      </div>
-    );
-  }
-
-  const currency = quote?.currency ?? (item.market === "jp" ? "JPY" : "USD");
-  const price = quote?.price;
+  const market = ticker.endsWith(".T") ? "jp" : "us";
+  const currency = quote?.currency ?? (market === "jp" ? "JPY" : "USD");
+  const price = quote?.price ?? null;
   const alertHit =
+    inWatchlist &&
+    item &&
     price != null &&
     ((item.alert_low != null && price <= item.alert_low) ||
       (item.alert_high != null && price >= item.alert_high));
 
   return (
-    <div className="flex-1 pb-20">
-      <header className="sticky top-0 z-30 bg-white/90 dark:bg-slate-950/90 backdrop-blur border-b border-slate-200 dark:border-slate-800">
-        <div className="max-w-screen-md mx-auto flex items-center gap-2 px-2 h-14">
-          <Link
-            href="/"
-            aria-label="戻る"
-            className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800"
-          >
-            <ChevronLeft className="w-5 h-5" />
-          </Link>
-          <div className="flex-1 min-w-0">
-            <p className="font-bold truncate">{item.name}</p>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              {displayTicker(item.ticker)} · {item.market === "jp" ? "日本株" : "米国株"}
-            </p>
-          </div>
+    <div>
+      <div className="px-2 pt-2 flex items-center gap-2">
+        <Link
+          href="/"
+          aria-label="戻る"
+          className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300"
+        >
+          <ChevronLeft className="w-5 h-5" />
+        </Link>
+        <div className="flex-1 min-w-0">
+          <p className="font-bold truncate">{name}</p>
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            {displayTicker(ticker)} · {market === "jp" ? "日本株" : "米国株"}
+          </p>
+        </div>
+        {inWatchlist && (
           <button
             type="button"
             onClick={remove}
@@ -155,34 +167,49 @@ export function StockDetail({ ticker }: Props) {
           >
             <Trash2 className="w-5 h-5" />
           </button>
-        </div>
-      </header>
+        )}
+      </div>
 
-      <div className="max-w-screen-md mx-auto">
-        <section className="px-4 py-5 bg-white dark:bg-slate-900 sm:rounded-2xl sm:mx-2 sm:my-2 border-y sm:border border-slate-200 dark:border-slate-800">
-          <p className="text-3xl font-bold tabular-nums">
-            {formatPrice(price, currency)}
-          </p>
-          <p className={`text-sm tabular-nums mt-1 ${changeColor(quote?.change)}`}>
-            {formatChange(quote?.change, quote?.changePercent, currency)}
-          </p>
-          {alertHit && (
-            <div className="mt-3 flex items-center gap-2 text-amber-600 bg-amber-50 dark:bg-amber-900/20 dark:text-amber-400 px-3 py-2 rounded-lg text-sm">
-              <AlertTriangle className="w-4 h-4" />
-              アラート条件に達しています
-            </div>
+      <section className="px-4 py-5 mt-2 bg-white dark:bg-slate-900 sm:rounded-2xl sm:mx-2 sm:my-2 border-y sm:border border-slate-200 dark:border-slate-800">
+        <p className="text-3xl font-bold tabular-nums">
+          {formatPrice(price, currency)}
+        </p>
+        <p className={`text-sm tabular-nums mt-1 ${changeColor(quote?.change)}`}>
+          {formatChange(quote?.change, quote?.changePercent, currency)}
+        </p>
+        {alertHit && (
+          <div className="mt-3 flex items-center gap-2 text-amber-600 bg-amber-50 dark:bg-amber-900/20 dark:text-amber-400 px-3 py-2 rounded-lg text-sm">
+            <AlertTriangle className="w-4 h-4" />
+            アラート条件に達しています
+          </div>
+        )}
+
+        <div className="mt-4 flex flex-wrap gap-2">
+          <AddPaperButton ticker={ticker} small={false} label="エア取引で買う" />
+          {!inWatchlist && (
+            <button
+              type="button"
+              onClick={addToWatchlist}
+              disabled={adding}
+              className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-full text-sm font-semibold border border-emerald-600 text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-900/30 disabled:opacity-50 transition"
+            >
+              {adding ? <Loader2 className="w-4 h-4 animate-spin" /> : <Star className="w-4 h-4" />}
+              ウォッチリストに追加
+            </button>
           )}
-        </section>
-
-        <div className="my-2">
-          <ChartView
-            ticker={item.ticker}
-            currency={currency}
-            alertLow={item.alert_low}
-            alertHigh={item.alert_high}
-          />
         </div>
+      </section>
 
+      <div className="my-2">
+        <ChartView
+          ticker={ticker}
+          currency={currency}
+          alertLow={item?.alert_low ?? null}
+          alertHigh={item?.alert_high ?? null}
+        />
+      </div>
+
+      {inWatchlist && item && (
         <section className="bg-white dark:bg-slate-900 sm:rounded-2xl sm:mx-2 my-2 border-y sm:border border-slate-200 dark:border-slate-800 p-4 space-y-4">
           <div>
             <label className="block text-sm font-semibold mb-1">フォルダ</label>
@@ -256,10 +283,10 @@ export function StockDetail({ ticker }: Props) {
             {savedHint ? "保存しました" : "保存"}
           </button>
         </section>
+      )}
 
-        <div className="my-2">
-          <NewsList ticker={item.ticker} />
-        </div>
+      <div className="my-2">
+        <NewsList ticker={ticker} />
       </div>
     </div>
   );

@@ -1,11 +1,23 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
-import { LogOut } from "lucide-react";
+import { LogOut, Sparkles } from "lucide-react";
 
-export function AppHeader({ title = "かぶウォッチ" }: { title?: string }) {
+const TITLES: Record<string, string> = {
+  "/": "かぶウォッチ",
+  "/picks": "AI予想の履歴",
+  "/paper": "エア取引",
+  "/watchlist": "ウォッチリスト",
+};
+
+export function AppHeader() {
   const router = useRouter();
+  const path = usePathname() ?? "/";
+
+  if (path === "/login") return null;
+
+  const title = TITLES[path] ?? (path.startsWith("/stock") ? "銘柄の詳細" : "かぶウォッチ");
 
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -18,9 +30,12 @@ export function AppHeader({ title = "かぶウォッチ" }: { title?: string }) 
       <div className="max-w-screen-md mx-auto flex items-center justify-between px-4 h-14">
         <Link
           href="/"
-          className="font-bold text-lg tracking-tight text-emerald-700 dark:text-emerald-400"
+          className="flex items-center gap-1.5 font-bold text-base tracking-tight"
         >
-          {title}
+          <Sparkles className="w-4 h-4 text-indigo-500" />
+          <span className="bg-gradient-to-r from-indigo-600 to-emerald-600 bg-clip-text text-transparent">
+            {title}
+          </span>
         </Link>
         <button
           type="button"

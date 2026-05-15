@@ -2,6 +2,10 @@
 
 @theme inline {
   --font-sans: var(--font-geist-sans);
+  --animate-fade-in: fade-in 0.4s ease-out;
+  --animate-slide-up: slide-up 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-pop-in: pop-in 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-slide-in-from-bottom: slide-in-from-bottom 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 html,
@@ -10,19 +14,108 @@ body {
     "Hiragino Sans", "Yu Gothic UI", "Yu Gothic", Meiryo, sans-serif;
   -webkit-tap-highlight-color: transparent;
   overscroll-behavior-y: contain;
+  /* Apple 風の細かいスムーズスクロール */
+  -webkit-overflow-scrolling: touch;
 }
 
-/* Make tap targets feel snappy on iOS */
+/* タップ操作を気持ちよくする */
 button,
 [role="button"],
 a {
   -webkit-touch-callout: none;
+  touch-action: manipulation;
 }
 
-/* Hide scrollbars on horizontal tab strips */
+/* 横スクロールのタブ列はスクロールバーを隠す */
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
 .no-scrollbar {
   scrollbar-width: none;
+}
+
+/* ----- 軽量なキーフレーム ----- */
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pop-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes slide-in-from-bottom {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+.animate-in {
+  animation-duration: 0.25s;
+  animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+  animation-fill-mode: both;
+}
+
+.slide-in-from-bottom {
+  animation-name: slide-in-from-bottom;
+}
+
+.duration-200 {
+  animation-duration: 0.2s;
+}
+
+/* ----- recharts のフォントを統一 ----- */
+
+.recharts-text {
+  font-family: inherit;
+}
+
+/* ----- スクロールバーを上品に ----- */
+
+@media (prefers-color-scheme: light) {
+  * {
+    scrollbar-color: #cbd5e1 transparent;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  * {
+    scrollbar-color: #475569 transparent;
+  }
+}
+
+/* 動きを抑える環境を尊重する */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }
