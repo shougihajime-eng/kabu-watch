@@ -5,6 +5,7 @@ import { ChevronRight } from "lucide-react";
 import type { AiPickWithSnapshots } from "@/lib/picks";
 import { formatPrice } from "@/lib/format";
 import { ChangeChip, HorizonBadge, RiskBadge } from "./PickBadges";
+import { SignalDot } from "./SignalLight";
 
 type Props = { pick: AiPickWithSnapshots };
 
@@ -39,6 +40,7 @@ export function PickCard({ pick }: Props) {
       </div>
 
       <div className="flex flex-wrap gap-1.5 items-center mb-3">
+        <SignalDot signal={pick.signal} />
         <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200">
           自信度 {pick.confidence}
         </span>

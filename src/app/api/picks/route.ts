@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/server";
 import { yahooFinance } from "@/lib/yahoo";
-import type { AiPick, AiPickWithSnapshots, PickSnapshot } from "@/lib/picks";
+import { deriveSignalAndRisk, type AiPick, type AiPickWithSnapshots, type PickSnapshot } from "@/lib/picks";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -65,11 +65,15 @@ export async function GET(req: NextRequest) {
       live != null && p.price_at_pick && p.price_at_pick > 0
         ? Number((((live - p.price_at_pick) / p.price_at_pick) * 100).toFixed(2))
         : null;
+    const derived = deriveSignalAndRisk(p.signals ?? {}, p.confidence);
     return {
       ...p,
       snapshots: snapMap.get(p.id) ?? {},
       livePrice: live,
       liveChangePct,
+      signal: derived.signal,
+      signalReason: derived.signalReason,
+      maxDrawdownPct: derived.maxDrawdownPct,
     };
   });
 

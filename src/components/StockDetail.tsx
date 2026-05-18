@@ -9,6 +9,17 @@ import { changeColor, formatChange, formatPrice } from "@/lib/format";
 import { ChartView } from "./ChartView";
 import { NewsList } from "./NewsList";
 import { AddPaperButton } from "./AddPaperButton";
+import { SignalLight } from "./SignalLight";
+import { WorstLossCard } from "./WorstLossCard";
+import type { SignalKind } from "@/lib/ai/scorer";
+
+type Insight = {
+  signal: SignalKind;
+  signalReason: string;
+  confidence: number;
+  maxDrawdownPct: number | null;
+  reasons: string[];
+};
 
 type Props = {
   ticker: string;
@@ -29,6 +40,8 @@ export function StockDetail({ ticker }: Props) {
   const [saving, setSaving] = useState(false);
   const [savedHint, setSavedHint] = useState(false);
   const [adding, setAdding] = useState(false);
+  const [insight, setInsight] = useState<Insight | null>(null);
+  const [insightLoading, setInsightLoading] = useState(true);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -72,6 +85,35 @@ export function StockDetail({ ticker }: Props) {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void load();
   }, [load]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setInsightLoading(true);
+    setInsight(null);
+    (async () => {
+      try {
+        const res = await fetch(`/api/stock/insight?ticker=${encodeURIComponent(ticker)}`, { cache: "no-store" });
+        const data = await res.json();
+        if (cancelled) return;
+        if (data.ok) {
+          setInsight({
+            signal: data.signal,
+            signalReason: data.signalReason,
+            confidence: data.confidence,
+            maxDrawdownPct: data.maxDrawdownPct,
+            reasons: data.reasons ?? [],
+          });
+        }
+      } catch {
+        // 失敗時は単に表示しない
+      } finally {
+        if (!cancelled) setInsightLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [ticker]);
 
   async function save() {
     if (!item) return;
@@ -198,6 +240,40 @@ export function StockDetail({ ticker }: Props) {
             </button>
           )}
         </div>
+      </section>
+
+      {/* AI による信号機 + 最悪損失 */}
+      <section className="sm:rounded-2xl sm:mx-2 my-2 bg-white dark:bg-slate-900 border-y sm:border border-slate-200 dark:border-slate-800 p-4 space-y-3">
+        <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 tracking-wide">
+          AIによる判定
+        </p>
+        {insightLoading ? (
+          <div className="flex items-center gap-2 text-slate-400 text-xs">
+            <Loader2 className="w-3.5 h-3.5 animate-spin" /> 計算中…
+          </div>
+        ) : insight ? (
+          <>
+            <SignalLight signal={insight.signal} reason={insight.signalReason} size="lg" />
+            <WorstLossCard maxDrawdownPct={insight.maxDrawdownPct} size="lg" />
+            {insight.reasons.length > 0 && (
+              <div>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold mb-1.5">
+                  AIが見ているポイント
+                </p>
+                <ul className="space-y-1">
+                  {insight.reasons.slice(0, 4).map((r, i) => (
+                    <li key={i} className="text-sm flex gap-2 leading-relaxed">
+                      <span className="text-indigo-500 shrink-0 select-none">•</span>
+                      <span>{r}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </>
+        ) : (
+          <p className="text-xs text-slate-500">過去データが少なく、AI判定はできませんでした。</p>
+        )}
       </section>
 
       <div className="my-2">

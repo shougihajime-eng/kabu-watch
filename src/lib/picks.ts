@@ -1,4 +1,5 @@
 // AI 注目銘柄の集計用ヘルパー
+import { classifySignal, type SignalKind, type ScoreSignals } from "@/lib/ai/scorer";
 
 export type PickSnapshot = {
   pick_id: string;
@@ -30,7 +31,44 @@ export type AiPickWithSnapshots = AiPick & {
   snapshots: Record<number, PickSnapshot>; // horizon_days -> snapshot
   livePrice: number | null;
   liveChangePct: number | null; // 現時点の値動き
+  signal: SignalKind; // 信号機（保存時のスコアから導出）
+  signalReason: string;
+  maxDrawdownPct: number | null; // 過去観測の最大下落率（過去pickではnull）
 };
+
+// 保存時のスコア(JSONB)から信号機・最大ドローダウンを後付けで計算するヘルパー
+export function deriveSignalAndRisk(
+  signals: Record<string, number>,
+  confidence: number,
+): { signal: SignalKind; signalReason: string; maxDrawdownPct: number | null } {
+  // 必須フィールドが無い旧データへの後方互換
+  const sig: ScoreSignals = {
+    trend: Number(signals.trend ?? 50),
+    momentum: Number(signals.momentum ?? 50),
+    volume: Number(signals.volume ?? 50),
+    rsi: Number(signals.rsi ?? 50),
+    pullback: Number(signals.pullback ?? 50),
+    volatility: Number(signals.volatility ?? 0),
+    rsiValue: Number(signals.rsiValue ?? 50),
+    ma5: Number(signals.ma5 ?? 0),
+    ma20: Number(signals.ma20 ?? 0),
+    ma50: Number(signals.ma50 ?? 0),
+    return1d: Number(signals.return1d ?? 0),
+    return5d: Number(signals.return5d ?? 0),
+    return20d: Number(signals.return20d ?? 0),
+    volumeRatio: Number(signals.volumeRatio ?? 1),
+    maxDrawdownPct: Number(signals.maxDrawdownPct ?? 0),
+    worst20DayDropPct: Number(signals.worst20DayDropPct ?? 0),
+    worstSingleDayDropPct: Number(signals.worstSingleDayDropPct ?? 0),
+  };
+  const { signal, reason } = classifySignal(sig, confidence);
+  const dd = signals.maxDrawdownPct;
+  return {
+    signal,
+    signalReason: reason,
+    maxDrawdownPct: typeof dd === "number" && Number.isFinite(dd) ? dd : null,
+  };
+}
 
 export type HorizonStats = {
   horizonDays: number;

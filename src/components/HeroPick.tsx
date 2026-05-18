@@ -6,6 +6,8 @@ import type { AiPickWithSnapshots } from "@/lib/picks";
 import { formatPrice } from "@/lib/format";
 import { ConfidenceBar, RiskBadge, HorizonBadge, ChangeChip } from "./PickBadges";
 import { AddPaperButton } from "./AddPaperButton";
+import { SignalLight } from "./SignalLight";
+import { WorstLossCard } from "./WorstLossCard";
 import { Term } from "./Term";
 
 type Props = {
@@ -64,9 +66,19 @@ export function HeroPick({ pick, similarHitRate, similarSampleSize, rankLabel }:
           </div>
         </div>
 
+        {/* 信号機（ドカンと一番目立つ位置に） */}
+        <div className="mb-4">
+          <SignalLight signal={pick.signal} reason={pick.signalReason} size="lg" />
+        </div>
+
         {/* 自信度バー */}
         <div className="mb-4">
           <ConfidenceBar value={pick.confidence} />
+        </div>
+
+        {/* 最悪いくら損するか */}
+        <div className="mb-4">
+          <WorstLossCard maxDrawdownPct={pick.maxDrawdownPct} size="lg" />
         </div>
 
         {/* バッジ群 */}

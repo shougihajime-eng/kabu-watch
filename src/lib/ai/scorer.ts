@@ -29,7 +29,13 @@ export type ScoreSignals = {
   return5d: number;
   return20d: number;
   volumeRatio: number; // 直近5日平均 / 直近20日平均
+  // --- 最悪損失（過去のチャートから観測した「最悪のとき」）---
+  maxDrawdownPct: number; // 過去90日で観測された最大ドローダウン (%)。例: -25 なら最悪25%下げた
+  worst20DayDropPct: number; // 過去90日で20日連続の最大下落率 (%)
+  worstSingleDayDropPct: number; // 過去90日で1日で最大の下落率 (%)
 };
+
+export type SignalKind = "buy" | "wait" | "avoid";
 
 export type Verdict = {
   confidence: number; // 0-100
@@ -38,7 +44,54 @@ export type Verdict = {
   rationale: string; // 日本語で2-4文
   reasons: string[]; // 短い箇条書き
   signals: ScoreSignals;
+  signal: SignalKind; // 信号機: 買い / 様子見 / 避ける
+  signalReason: string; // なぜその信号にしたか（日本語1文）
 };
+
+// 信号機の判定: スコア + リスク + 過熱感を組み合わせる。
+//   - buy(青): 自信度が高く、買われすぎでもなく、急騰しすぎでもない
+//   - avoid(赤): 自信度が低い、または極端に買われすぎ／極端に下落基調
+//   - wait(黄): その間
+export function classifySignal(signals: ScoreSignals, confidence: number): { signal: SignalKind; reason: string } {
+  const { rsiValue, return20d, return5d, trend, momentum } = signals;
+
+  // 強い赤シグナル: 過熱しすぎ・崩れすぎ
+  if (rsiValue >= 80) {
+    return { signal: "avoid", reason: "買われすぎサイン。今飛びつくと高値づかみの危険" };
+  }
+  if (return20d > 35) {
+    return { signal: "avoid", reason: "1か月で大きく上げすぎ。利益確定の売りに巻き込まれやすい" };
+  }
+  if (confidence < 35) {
+    return { signal: "avoid", reason: "複数の指標が良くない方向。今はやめておくのが無難" };
+  }
+  if (trend < 35 && momentum < 35) {
+    return { signal: "avoid", reason: "流れが下向き。下げ止まりを待ちたい" };
+  }
+
+  // 青シグナル: 自信度が十分にあり過熱しすぎず素直な上昇
+  if (
+    confidence >= 60 &&
+    rsiValue <= 72 &&
+    return20d <= 25 &&
+    return5d >= -8 &&
+    trend >= 55
+  ) {
+    return { signal: "buy", reason: "複数の指標が前向き。エア取引で試してみる価値あり" };
+  }
+
+  // それ以外は黄
+  if (confidence < 50) {
+    return { signal: "wait", reason: "決め手に欠ける。もう少し動きを見たい" };
+  }
+  if (rsiValue > 72) {
+    return { signal: "wait", reason: "短期的に買われすぎ気味。押し目を待ちたい" };
+  }
+  if (return5d < -5) {
+    return { signal: "wait", reason: "直近で急落中。下げ止まりを確認したい" };
+  }
+  return { signal: "wait", reason: "悪くないが、もう一押し材料が欲しい" };
+}
 
 function avg(arr: number[]): number {
   if (arr.length === 0) return NaN;
@@ -120,6 +173,34 @@ export function scoreBars(bars: Bar[]): Verdict | null {
     dailyReturns.push(((closes[i] - closes[i - 1]) / closes[i - 1]) * 100);
   }
   const vol = stddev(dailyReturns);
+
+  // --- 最悪損失（過去90日のチャートから観測した「最悪のとき」）---
+  // 最大ドローダウン: 過去90日内のあらゆる高値からその後の最安値までの最大下落率
+  const lookback = Math.min(90, closes.length);
+  const window = closes.slice(-lookback);
+  let peak = window[0];
+  let maxDD = 0; // 負の値で表現（例: -25 なら 25% 下げた）
+  for (const c of window) {
+    if (c > peak) peak = c;
+    const dd = ((c - peak) / peak) * 100;
+    if (dd < maxDD) maxDD = dd;
+  }
+
+  // 1日で最大の下落率
+  let worstSingle = 0;
+  for (let i = Math.max(1, closes.length - lookback); i < closes.length; i++) {
+    const r = ((closes[i] - closes[i - 1]) / closes[i - 1]) * 100;
+    if (r < worstSingle) worstSingle = r;
+  }
+
+  // 20日連続で最大の下落率
+  let worst20 = 0;
+  if (closes.length >= 21) {
+    for (let i = Math.max(20, closes.length - lookback); i < closes.length; i++) {
+      const r = ((closes[i] - closes[i - 20]) / closes[i - 20]) * 100;
+      if (r < worst20) worst20 = r;
+    }
+  }
 
   // --- ここからスコアリング ---
 
@@ -238,27 +319,49 @@ export function scoreBars(bars: Bar[]): Verdict | null {
 
   const rationale = reasons.slice(0, 3).join("。") + "。";
 
+  const signalsOut: ScoreSignals = {
+    trend: Math.round(trend),
+    momentum: Math.round(momentum),
+    volume: Math.round(volScore),
+    rsi: Math.round(rsiScore),
+    pullback: Math.round(pullback),
+    volatility: Number(vol.toFixed(2)),
+    rsiValue: Number(Number.isNaN(rsiVal) ? 0 : rsiVal.toFixed(1)),
+    ma5: Number(Number.isNaN(ma5) ? 0 : ma5.toFixed(2)),
+    ma20: Number(Number.isNaN(ma20) ? 0 : ma20.toFixed(2)),
+    ma50: Number(Number.isNaN(ma50) ? 0 : ma50.toFixed(2)),
+    return1d: Number(return1d.toFixed(2)),
+    return5d: Number(return5d.toFixed(2)),
+    return20d: Number(return20d.toFixed(2)),
+    volumeRatio: Number(volumeRatio.toFixed(2)),
+    maxDrawdownPct: Number(maxDD.toFixed(2)),
+    worst20DayDropPct: Number(worst20.toFixed(2)),
+    worstSingleDayDropPct: Number(worstSingle.toFixed(2)),
+  };
+
+  const { signal, reason: signalReason } = classifySignal(signalsOut, confidence);
+
   return {
     confidence,
     riskLevel,
     horizon,
     rationale,
     reasons,
-    signals: {
-      trend: Math.round(trend),
-      momentum: Math.round(momentum),
-      volume: Math.round(volScore),
-      rsi: Math.round(rsiScore),
-      pullback: Math.round(pullback),
-      volatility: Number(vol.toFixed(2)),
-      rsiValue: Number(Number.isNaN(rsiVal) ? 0 : rsiVal.toFixed(1)),
-      ma5: Number(Number.isNaN(ma5) ? 0 : ma5.toFixed(2)),
-      ma20: Number(Number.isNaN(ma20) ? 0 : ma20.toFixed(2)),
-      ma50: Number(Number.isNaN(ma50) ? 0 : ma50.toFixed(2)),
-      return1d: Number(return1d.toFixed(2)),
-      return5d: Number(return5d.toFixed(2)),
-      return20d: Number(return20d.toFixed(2)),
-      volumeRatio: Number(volumeRatio.toFixed(2)),
-    },
+    signals: signalsOut,
+    signal,
+    signalReason,
+  };
+}
+
+// 過去90日の最大ドローダウンと、ある投資金額からの最悪損失見積もりを返すヘルパー。
+// 「10万円買ったら最悪いくら損するか」を分かりやすく見せるための変換。
+export function estimateWorstLoss(maxDrawdownPct: number, investAmount: number): {
+  lossAmount: number; // 円・正の値
+  lossPct: number; // 正の値（例: 25 = 25%）
+} {
+  const pct = Math.abs(maxDrawdownPct);
+  return {
+    lossAmount: Math.round((investAmount * pct) / 100),
+    lossPct: Number(pct.toFixed(1)),
   };
 }
